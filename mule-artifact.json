@@ -1,0 +1,4 @@
+{
+  "secureProperties": ["sfdc.cosumerKey", "sfdc.cosumerSecret","sfdc.password"],
+  "minMuleVersion": "4.3.0"
+}

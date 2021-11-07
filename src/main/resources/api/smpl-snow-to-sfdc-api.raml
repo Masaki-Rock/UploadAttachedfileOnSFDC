@@ -1,0 +1,38 @@
+#%RAML 1.0
+title: dsp-snow-application-submit-api
+version: 1.0.0
+description: DSP SNOW Application Submit API
+
+/submit/{sys_id}:
+  post:
+    displayName: snow-application-submit
+    description: SNOW Application Submit
+    headers:
+      X-Correlation-ID:
+        type: string
+        example: "3d54031f-2f13-3010-c27e-2ca62799b6c6"
+    body:
+      multipart/form-data:
+          properties:
+            application:
+              type: object
+            applicationdetails?:
+              type: object[]
+            attachedfiles?:
+              type: file
+    responses:
+      200:
+        body:
+          application/json:
+            type: object
+            example: {"message": "Application Submission Success"}
+      400:
+        body:
+          application/json:
+            type: object
+            example: {"message": "Bad Request"}
+      500:
+        body:
+          application/json:
+            type: object
+            example: {"message": "Internal Server Error"}

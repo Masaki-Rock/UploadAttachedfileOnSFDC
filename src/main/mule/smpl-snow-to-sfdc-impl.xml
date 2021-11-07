@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:salesforce-composite="http://www.mulesoft.org/schema/mule/salesforce-composite" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/salesforce-composite http://www.mulesoft.org/schema/mule/salesforce-composite/current/mule-salesforce-composite.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+	<flow name="UpdateApplicationMainFlow" doc:id="52447eb3-9a47-4b8a-95d6-faa98a05288e" >
+		<logger level="INFO" doc:name="StartLogger" doc:id="28bd2ff3-2e39-4d99-b581-154861aede5e" message='"The Main Flow process start!!"'/>
+		<flow-ref doc:name="UpdateApplicationAndDeleteAttachedFiles" doc:id="95da1201-bdf3-4ba5-8583-62d049ce1566" name="UpdateApplicationAndDeleteAttachedFilesFlow" target="upsertCaseResult"/>
+		<choice doc:name="CheckExistAttachedFiles" doc:id="445c1ce7-6061-48da-af7f-c2d33b13363e" >
+			<when expression="#[message.payload.parts.attachedfiles != null]">
+				<flow-ref doc:name="Upload File Attachment" doc:id="03a79bae-1b91-4786-b9c7-bf33f8156cf8" name="UploadAttachedFilesFlow" />
+			</when>
+		</choice>
+		<ee:transform doc:name="Response Message" doc:id="302af894-c088-4c00-ba2d-4f440dbd5968">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message": error.description default "Application submission success!"
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		<logger level="INFO" doc:name="EndLogger" doc:id="e2b6cf3f-bd03-4cfb-9166-a06ef07d55ec" message='"The Main Flow process finished!!"' />
+	
+</flow>
+	<sub-flow name="UpdateApplicationAndDeleteAttachedFilesFlow" doc:id="58502357-ee72-4969-af3e-26a8549eed1b" >
+		<salesforce:query doc:name="Search File Attachment" doc:id="8a041ba1-874b-4b3e-a5f6-39e3e46c7d73" config-ref="Salesforce_Config" target="attachedfiles">
+			<reconnect />
+			<salesforce:salesforce-query><![CDATA[SELECT ContentDocumentId 
+FROM ContentDocumentLink 
+WHERE LinkedEntityId 
+IN (
+  SELECT Id 
+  FROM Case
+  WHERE SNOW_System_Id__c=':caseId'
+  )]]></salesforce:salesforce-query>
+			<salesforce:parameters><![CDATA[#[%dw 2.0 output application/java
+---
+{
+	"caseId" : attributes.uriParams.sys_id as String
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<salesforce-composite:execute-composite-request doc:name="Upsert Case record and Delete Attacted files" doc:id="6e197ee6-e7a6-4e00-9acd-3c6a09043861" config-ref="Salesforce_Composite_Config">
+			<reconnect />
+			<salesforce-composite:request-body ><![CDATA[#[%dw 2.0
+output application/json
+---
+if(isEmpty(vars.attachedfiles) == false) {
+	allOrNone: true,
+	compositeRequest: [
+		{
+			method: "PATCH",
+			url: "/services/data/v50.0/sobjects/case/SNOW_System_Id__c/" ++ attributes.uriParams.sys_id as String,
+			referenceId: "case_rec",
+			body: message.payload.parts.application.content
+		},
+		{
+			method: "DELETE",
+			url: "/services/data/v50.0/composite/sobjects/?ids=" ++ (vars.attachedfiles.*ContentDocumentId default [] joinBy "," as String) ++ "&allOrNone=true",
+			referenceId: "file_rec" 
+		}
+	]
+} else {
+	allOrNone: true,
+	compositeRequest: [
+		{
+			method: "PATCH",
+			url: "/services/data/v50.0/sobjects/case/SNOW_System_Id__c/" ++ attributes.uriParams.sys_id as String,
+			referenceId: "case_rec",
+			body: message.payload.parts.application.content
+		}
+	]
+}]]]></salesforce-composite:request-body>
+		</salesforce-composite:execute-composite-request>
+		<logger level="INFO" doc:name="Upsert Case record result log" doc:id="6b028d7b-a3d2-4f76-bc97-1a6fa77f9812" message="#[payload]" category="upsert case result."/>
+		<validation:is-empty-collection doc:name="Check upserted Case record" doc:id="6c108a8e-b18b-4a70-a7fe-2bc47ebf7a9b" values="#[payload.compositeResponse as Array filter((item,index) -&gt; item.httpStatusCode&lt;200 or item.httpStatusCode&gt;299 or item.body.success == false)]" message="Case upsert process failed."/>
+	</sub-flow>
+	<sub-flow name="UploadAttachedFilesFlow" doc:id="fe043cf3-94ad-4f2e-9868-a7239fcb2d22" >
+		<!-- <ee:transform doc:name="Map Content Version" doc:id="2874ce4c-7948-45fb-a4d1-5e7ad104dc5b" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output multipart/form-data
+boundary= 'sfdcboundary'
+-&#45;&#45;
+{
+	parts: {
+		entity_content: {
+			headers: {
+				"Content-Type": "application/json"
+			},
+			content: {
+				"ReasonForChange": payload.parts.attachedfiles.headers."Content-Disposition".filename,
+				"PathOnClient": payload.parts.attachedfiles.headers."Content-Disposition".filename
+			}
+		},
+		VersionData: {
+			headers: {
+				"Content-Type": payload.parts.attachedfiles.headers."Content-Type",
+				"Content-Disposition": 'form-data; name="VersionData"; filename="uploadfiletest.pdf"'
+			},
+			content: payload.parts.attachedfiles.content
+		}
+	}
+	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform> -->
+		<ee:transform doc:name="Transform Message" doc:id="13db7476-9390-474e-a269-86fe1475a902" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/dw
+---
+message.payload.parts.*attachedfiles]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:upsert objectType="ContentVersion" doc:name="Create Content Version" doc:id="5e4ab028-e57c-4041-930f-adbae3937933" config-ref="Salesforce_Config" externalIdFieldName="Id">
+			<reconnect />
+			<salesforce:records ><![CDATA[#[%dw 2.0
+import * from dw::core::URL
+import * from dw::core::Binaries
+output application/java
+---
+message.payload map((item,index) -> 
+{
+	Title: decodeURI(item.headers."Content-Disposition".filename),
+	PathOnClient: decodeURI(item.headers."Content-Disposition".filename),
+	VersionData: fromBase64(item.content),
+	FirstPublishLocationId: vars.upsertCaseResult.compositeResponse[0].body.id
+})]]]></salesforce:records>
+		</salesforce:upsert>
+		<!-- <salesforce:query doc:name="Get Content Document Id" doc:id="95326d4d-681a-45c0-9137-b2e8f91039d3" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query ><![CDATA[SELECT ContentDocumentId FROM ContentVersion WHERE Id = ':contentVersionId']]></salesforce:salesforce-query>
+			<salesforce:parameters ><![CDATA[#[%dw 2.0 output application/java
+&#-45;&#45;
+{
+	"contentVersionId" : payload.items[0].id
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<ee:transform doc:name="Map Document Link" doc:id="4ccec207-580e-4e33-8283-ca258af4c2b9" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+-&#45;&#45; 
+payload map (item, index) -> {
+	 LinkedEntityId: vars.caseId, //Record ID
+	 ContentDocumentId: item.ContentDocumentId //File ID
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:upsert doc:name="Create Content Document Link" doc:id="fa1d9fff-6d2d-405a-bb81-243bf2700a98" config-ref="Salesforce_Config" objectType="ContentDocumentLink" externalIdFieldName="Id"/> -->
+		<logger level="INFO" doc:name="Upload FileResult Logger" doc:id="95546553-0f80-4b0a-90db-09810bf67ea6" message="#[%dw 2.0
+output application/json 
+--- 
+payload]"/>
+		<validation:is-true doc:name="Check Upload Result" doc:id="e8444a88-af1d-4f68-a9e6-3d7f5506eff7" expression="#[payload.successful]" message="Upload files failed."/>
+	</sub-flow>
+
+</mule>

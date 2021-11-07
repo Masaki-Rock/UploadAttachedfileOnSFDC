@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:salesforce-composite="http://www.mulesoft.org/schema/mule/salesforce-composite"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/salesforce-composite http://www.mulesoft.org/schema/mule/salesforce-composite/current/mule-salesforce-composite.xsd">
+    <http:listener-config name="smpl-snow-to-sfdc-api-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="${https.port}" protocol="HTTPS">
+			<tls:context >
+				<tls:key-store type="pkcs12" path="mule_server_dev.p12" alias="mule_server_dev" keyPassword="password" password="password"/>
+			</tls:context>
+		</http:listener-connection>
+    </http:listener-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="a4b3c818-7798-4559-911a-12a52ec89838" file="config-${env}.properties" />
+	<global-property doc:name="Global Property" doc:id="5477bbc7-f82f-4ff3-8d4f-afa897ff6396" name="env" value="dev" />
+	<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="a95cb536-4fd9-410f-9a0b-4ead25fe6344" >
+		<salesforce:oauth-user-pass-connection consumerKey="${sfdc.cosumerKey}" consumerSecret="${sfdc.cosumerSecret}" username="${sfdc.username}" password="${sfdc.password}" tokenEndpoint="${sfdc.tokenEndpoint}"/>
+	</salesforce:sfdc-config>
+	<salesforce-composite:composite-config name="Salesforce_Composite_Config" doc:name="Salesforce Composite Config" doc:id="9774fbb3-8aac-4305-bbd9-5f46b1794fad" >
+		<salesforce-composite:oauth-user-pass-connection consumerKey="${sfdc.cosumerKey}" consumerSecret="${sfdc.cosumerSecret}" username="${sfdc.username}" password="${sfdc.password}" tokenEndpoint="${sfdc.tokenEndpoint}"/>
+	</salesforce-composite:composite-config>
+</mule>
